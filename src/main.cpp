@@ -8,12 +8,28 @@
 #define DHT_PIN D2
 
 DHT dht = DHT(DHT_PIN, DHT22);
+HTTPClient http;
+WiFiClientSecure wifiClient;
+
+struct measurement_t {
+    float humidity;
+    float temperature;
+    float carbon_dioxide;
+
+public:
+    String json() const {
+        return "{\"humidity\":" + String(this->humidity) + ","
+               + "\"carbon_dioxide\":" + String(this->carbon_dioxide) + ","
+               + "\"temperature\":" + String(this->temperature) + "}";
+    }
+};
 
 void setup() {
     Serial.begin(9600);
 
     dht.begin();
     WiFi.begin(WIFI_SSID, WIFI_PASSWD);
+    wifiClient.setInsecure();
 
     int tries = 0;
     while (WiFi.status() != WL_CONNECTED) {
@@ -24,29 +40,38 @@ void setup() {
     Serial.printf("Connected to %s with IP Address: %s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
-#define MEASURE_INTERVAL (1000 * 60 * 5);
-//const int MEASURE_INTERVAL = 5000;
+const int MEASURE_INTERVAL = (1000 * 60 * 5);
+
+measurement_t get_latest_measurement() {
+    measurement_t measurement{};
+    measurement.humidity = dht.readHumidity();
+    measurement.temperature = dht.readTemperature();
+
+    return measurement;
+}
+
+int submit_measurement(const measurement_t measurement) {
+    http.begin(wifiClient, String(APP_BASE_URL) + "/api/measurements");
+    http.addHeader("Content-Type", "application/json");
+
+    int responseCode = http.POST(measurement.json());
+    http.end();
+
+    return responseCode;
+}
 
 void loop() {
     if (millis() % MEASURE_INTERVAL != 0) {
         return;
     }
 
-    // Read the humidity and temperature in %:
-    float humidity = dht.readHumidity();
-    float temperature = dht.readTemperature();
-    float heat_index = dht.computeHeatIndex(temperature, humidity, false);
+    const measurement_t measurement = get_latest_measurement();
+    const int response = submit_measurement(measurement);
 
-    Serial.print("Humidity: ");
-    Serial.print(humidity);
-    Serial.println("%");
-    Serial.print("Temperature: ");
-    Serial.print(temperature);
-    Serial.println("°C");
-    Serial.print("Feels like: ");
-    Serial.print(heat_index);
-    Serial.println("°C");
-    Serial.println("Read finished...");
+    if (response >= 400) {
+        Serial.print(response);
+        Serial.println(' ' + measurement.json());
+    }
 
     delay(1);
 }
