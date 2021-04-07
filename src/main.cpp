@@ -53,6 +53,7 @@ measurement_t get_latest_measurement() {
 int submit_measurement(const measurement_t measurement) {
     http.begin(wifiClient, String(APP_BASE_URL) + "/api/measurements");
     http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + String(APP_DEVICE_TOKEN));
 
     int responseCode = http.POST(measurement.json());
     http.end();
